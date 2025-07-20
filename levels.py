@@ -9,6 +9,7 @@ import typing
 from discord import app_commands
 
 ADMIN_ROLES = (1343579448020308008, 1363492577067663430, 1319213465390284860,1373321679132033124, 1356640586123448501, 1343556153657004074, 1294291057437048843)
+GUILD_ID = 1319213192064536607
 class AddModal(discord.ui.Modal):
     def __init__(self, bot:commands.Bot, cog: commands.Cog):
         super().__init__(title="Add Xp/Level", timeout=3600)
@@ -373,7 +374,21 @@ class LevelCog(commands.Cog):
         embed.set_thumbnail(url=interaction.guild.icon.url)
         await interaction.followup.send(embed=embed)
         
-                
+    @tasks.loop(time=datetime.time(hour=0))
+    async def weekly_reward(self):
+        now = datetime.datetime.now()
+        if now.weekday() == 5:
+            async with self.bot.level_pool.acquire() as conn:
+                rows = await conn.execute('''SELECT user_id FROM leveldb ORDER BY xp DESC LIMIT 5 ''')
+                results = await rows.fetchall()
+            guild = self.bot.get_guild(GUILD_ID)
+            for result in results:
+                user_id = result["user_id"]
+                try:
+                    member = guild.get_member(user_id)
+                except discord.NotFound:
+                    continue
+                await member.add_roles(discord.Object(1395723836351189093))
 
 async def setup(bot:commands.Bot):
     await bot.add_cog(LevelCog(bot))
