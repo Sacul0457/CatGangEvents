@@ -25,6 +25,7 @@ class GuessView(discord.ui.View):
         self.start_time = start_time
         self.bot = bot
         self.messsage :discord.Message | None = None
+        self.users :list[int] = []
 
 
     async def on_timeout(self):
@@ -34,6 +35,8 @@ class GuessView(discord.ui.View):
     @discord.ui.button(label="1", style=discord.ButtonStyle.secondary, custom_id="button1")
     async def button1(self, interaction:discord.Interaction, button:discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
+        if interaction.user.id in self.users:
+            return await interaction.followup.send(f"You can only try once! This is your second attempt :(")
         if self.first == "cat":
             time_taken = time.perf_counter() - self.start_time
             for child in self.children:
@@ -59,7 +62,7 @@ class GuessView(discord.ui.View):
             embed = discord.Embed(title="Wrong one!",
                                   description="Try again, don't give up!",
                                   color=discord.Color.brand_red())
-            
+            self.users.append(interaction.user.id)
             await interaction.followup.send(embed=embed, ephemeral=True)
     @discord.ui.button(label="2", style=discord.ButtonStyle.secondary, custom_id="button2")
     async def button2(self, interaction:discord.Interaction, button:discord.ui.Button):
@@ -89,6 +92,7 @@ class GuessView(discord.ui.View):
             embed = discord.Embed(title="Wrong one!",
                                   description="Try again, don't give up!",
                                   color=discord.Color.brand_red())
+            self.users.append(interaction.user.id)
             await interaction.followup.send(embed=embed, ephemeral=True)
     @discord.ui.button(label="3", style=discord.ButtonStyle.secondary, custom_id="button3")
     async def button3(self, interaction:discord.Interaction, button:discord.ui.Button):
@@ -119,6 +123,7 @@ class GuessView(discord.ui.View):
                                   description="Try again, don't give up!",
                                   color=discord.Color.brand_red())
             
+            self.users.append(interaction.user.id)
             await interaction.followup.send(embed=embed, ephemeral=True)
 
 
