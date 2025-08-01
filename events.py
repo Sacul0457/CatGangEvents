@@ -14,7 +14,7 @@ from random import randint
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from cats import EventBot
+    from main import EventBot
 
 to_pick_from : tuple = ("cat", "no", "nope")
 
@@ -138,9 +138,9 @@ class RPCView(discord.ui.View):
 
 class RPCSelect(discord.ui.Select):
     def __init__(self, bot:EventBot):
-        options = [discord.SelectOption(label="Rock", value="rock", emoji="🪨"),
-                   discord.SelectOption(label="Paper", value="paper", emoji="📃"),
-                   discord.SelectOption(label="Scissors", value="scissors", emoji="✂️")]
+        options = [discord.SelectOption(label="Rock", value="Rock", emoji="🪨"),
+                   discord.SelectOption(label="Paper", value="Paper", emoji="📃"),
+                   discord.SelectOption(label="Scissors", value="Scissors", emoji="✂️")]
         super().__init__(custom_id="RPCSelect", placeholder="Choose Rock, Paper or Scissors... ", min_values=1, max_values=1, options=options)
         self.bot = bot
     
@@ -159,6 +159,10 @@ class RPCSelect(discord.ui.Select):
             return "False"
         
     async def callback(self, interaction:discord.Interaction):
+        await interaction.response.defer()
+        for child in self.view.children:
+            child.disabled = True
+        await interaction.message.edit(view=self.view)
         value = self.values[0]
         async with self.bot.economy_pool.acquire() as conn:
             row = await conn.execute('''SELECT money FROM economydb WHERE user_id = ?''',(interaction.user.id,))
@@ -178,26 +182,29 @@ class RPCSelect(discord.ui.Select):
                 await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
                                 ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, total))
                 await conn.commit()
+                
         if result == "True":
             embed = discord.Embed(title=f"You won!",
                                 description=f"- You earned 🪙**{eraned_or_lose} catbucks.** Well done!\
-                                    \n- You chose: `{eraned_or_lose}` | The bot: `{rand_ans}`",
+                                    \n- You chose: `{value}` | The bot: `{rand_ans}`",
                                 color=discord.Color.brand_green())
             embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
         elif result == "False":
             embed = discord.Embed(title=f"You lost D:",
                                 description=f"- You let 🪙**{eraned_or_lose} catbucks go down the drain...** \
-                                    \n- You chose: `{eraned_or_lose}` | The bot: `{rand_ans}`",
+                                    \n- You chose: `{value}` | The bot: `{rand_ans}`",
                                 color=discord.Color.brand_red())
             embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
         else:
             embed = discord.Embed(title=f"It's a tie!",
-                                description=f"- You chose: `{eraned_or_lose}` | The bot: `{rand_ans}`")
+                                description=f"- You chose: `{value}` | The bot: `{rand_ans}`")
             embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            
         await interaction.followup.send(embed=embed)
+
 
 
 class EventCog(commands.Cog):
