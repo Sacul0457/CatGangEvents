@@ -9,8 +9,11 @@ import typing
 from discord import app_commands
 import datetime
 
+if typing.TYPE_CHECKING:
+    from cats import EventBot
+
 ADMIN_ROLES = (1343579448020308008, 1363492577067663430, 1319213465390284860,1373321679132033124, 1356640586123448501, 1343556153657004074, 1294291057437048843)
-GUILD_ID = 1319213192064536607
+GUILD_ID = 1294290832219963563 #1319213192064536607
 class AddModal(discord.ui.Modal):
     def __init__(self, bot:commands.Bot, cog: commands.Cog):
         super().__init__(title="Add Xp/Level", timeout=3600)
@@ -205,7 +208,7 @@ class RemoveModal(discord.ui.Modal):
 
 
 class AdminView(discord.ui.View):
-    def __init__(self, bot:commands.Bot, cog:commands.Cog):
+    def __init__(self, bot:EventBot, cog:commands.Cog):
         super().__init__(timeout=3600)
         self.bot = bot
         self.cog = cog
@@ -226,6 +229,7 @@ class LevelCog(commands.Cog):
         self.xp_lock = asyncio.Lock()
     async def cog_load(self):
         self.save_data.start()
+        self.weekly_reward.start()
 
     async def get_xp(self, user_id : int) -> int:
         async with self.bot.level_pool.acquire() as conn:
@@ -237,7 +241,7 @@ class LevelCog(commands.Cog):
         return 0
         
     def get_level(self, xp:int) -> int:
-        return xp // 200
+        return xp // 350
 
 
     def check_level_up(self, old_xp: int, new_xp: int) -> int | None: 
@@ -247,7 +251,7 @@ class LevelCog(commands.Cog):
             return new_level
         return None
     def get_xp_from_level(self, level: int) -> int: 
-         return 200 * level
+         return 350 * level
     
     async def check_role(self, pending_roles : dict) -> None:
         guild = self.bot.get_guild(1319213192064536607)
@@ -255,16 +259,16 @@ class LevelCog(commands.Cog):
             member = guild.get_member(int(user_id))
             if member is None:
                 continue
-            if new_xp >= 40000: #200
+            if new_xp >= 70000: #200
                 role_id = 1346229335052386385
-            elif new_xp >= 20000: #100
+            elif new_xp >= 35000: #100
                 role_id = 1333829412939890781
-            elif new_xp >= 10000: #50
+            elif new_xp >= 17500: #50
                 role_id = 1333829256869969940
-            elif new_xp >= 6000: #30
+            elif new_xp >= 10500: #30
                 role_id = 1384914063817048076
                 await member.remove_roles(discord.Object(1384913772027711498))
-            elif new_xp >= 4000: #20
+            elif new_xp >= 7000: #20
                 role_id = 1384913772027711498
                 await member.remove_roles(discord.Object(1333828407070429257))
             else:
@@ -274,7 +278,7 @@ class LevelCog(commands.Cog):
     async def save_data(self):
         if not self.user_xp:
             return
-        start_time = time.perf_counter()
+
         to_level_up = {}
         pending_roles = {}
         update_data = []
@@ -293,16 +297,13 @@ class LevelCog(commands.Cog):
                     level_up = self.check_level_up(current_xp, new_xp)
                     if level_up:
                         to_level_up[user_id] = level_up
-                        if new_xp >= 2000:
+                        if new_xp >= 3500:
                             pending_roles[user_id] = new_xp
                 await conn.executemany('''INSERT INTO leveldb (user_id, xp) VALUES (?, ?)
                                     ON CONFLICT(user_id) DO UPDATE SET xp = excluded.xp''',
                                     update_data)
             self.user_xp.clear()
             await conn.commit()
-        end_time = time.perf_counter() - start_time
-        if end_time > 0.2:
-            print(f"DB took: {end_time:.10f}")
 
         if to_level_up:
             await self.process_level_ups(to_level_up, pending_roles)
@@ -367,14 +368,14 @@ class LevelCog(commands.Cog):
         async with self.bot.level_pool.acquire() as conn:
             rows = await conn.execute('''SELECT * FROM leveldb ORDER BY xp DESC LIMIT 10 ''')
             results = await rows.fetchall()
-        results_list = [f"<@{result['user_id']}> - Level {int(result['xp']// 200)} | `{result['xp']}`xp" for result in results]
+        results_list = [f"<@{result['user_id']}> - Level {int(result['xp']// 350)} | `{result['xp']}`xp" for result in results]
         resuls_final = "\n- ".join(results_list)
         embed = discord.Embed(title="Level Leaderboard",
                               description=f"1. {resuls_final}",
                               color=discord.Color.blurple())
         embed.set_thumbnail(url=interaction.guild.icon.url)
         await interaction.followup.send(embed=embed)
-        
+    
     @tasks.loop(time=datetime.time(hour=0))
     async def weekly_reward(self):
         now = datetime.datetime.now()
@@ -390,6 +391,7 @@ class LevelCog(commands.Cog):
                 except discord.NotFound:
                     continue
                 await member.add_roles(discord.Object(1395723836351189093))
+
 
 async def setup(bot:commands.Bot):
     await bot.add_cog(LevelCog(bot))
