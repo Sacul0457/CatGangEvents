@@ -9,6 +9,7 @@ import os
 import asqlite
 import random
 from random import randint
+import typing
 ADMIN_ROLES = (1343579448020308008, 1363492577067663430, 1319213465390284860,1373321679132033124, 1356640586123448501, 1343556153657004074, 1294291057437048843)
 
 class ShopSelectMenu(discord.ui.Select):
@@ -84,7 +85,7 @@ class ShopSelectMenu(discord.ui.Select):
                 ephemeral = False
                 await interaction.user.add_roles(role)
             else:
-                embed = discord.Embed(title="Error Occured!",
+                embed = discord.Embed(title="Error Occurred!",
                                       description=f"You already have the {role.mention} role!",
                                       color=discord.Color.brand_red())
                 ephemeral = True
@@ -152,7 +153,7 @@ class AddModal(discord.ui.Modal):
             await interaction.followup.send(embed=embed, ephemeral=True)
             async with self.bot.economy_pool.acquire() as conn:
                 await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
-                                   ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (member.id, int(amount) + old_amount))
+                                   ON CONFLICT(user_id) DO UPDATE SET money = money + excluded.money''', (member.id, int(amount)))
                 await conn.commit()
     
 class SetModal(discord.ui.Modal):
@@ -287,25 +288,110 @@ class EconomyCog(commands.Cog):
         else:
             extra = 0
         async with self.bot.economy_pool.acquire() as conn:
-            row = await conn.execute('''SELECT money FROM economydb WHERE user_id = ?''',(interaction.user.id,))
-            result = await row.fetchone()
-            if result is not None:
-                amount = result["money"]
-            else:
-                amount = 0
-            total = amount + earned + extra
             await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
-                               ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, total))
+                               ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, (extra + earned)))
             await conn.commit()
         embed = discord.Embed(title=f"Work - {interaction.user.name}",
                               description=f"You earned 🪙**{earned} catbucks.** Well done!",
                               color=discord.Color.blue())
+        embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
         if extra != 0:
             embed.add_field(name="", value=f"-# Since you are a VIP/Booster, you are given an extra 🪙**{extra} catbucks!**")
         await interaction.followup.send(embed=embed)
 
     @work.error
     async def work_error(self, interaction:discord.Interaction, error:app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            embed =discord.Embed(title="Cooldown!",
+                                 description=f"Try again <t:{int(time.time()) + int(error.retry_after)}:R>!",
+                                 color=discord.Color.red())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        else:
+            print(error)
+
+    @app_commands.command(name="coinflip", description="Choose heads or tails")
+    @app_commands.describe(bet="How much you want to bet (80-150)", choice="Heads or Tails")
+    @app_commands.checks.cooldown(1, 300)
+    async def coinflip(self, interaction:discord.Interaction, bet:app_commands.Range[int, 80, 150], choice:typing.Literal["Heads", "Tails"]) -> None:
+        await interaction.response.defer(thinking=True)
+        async with self.bot.economy_pool.acquire() as conn:
+            row = await conn.execute('''SELECT money FROM economydb WHERE user_id = ?''',(interaction.user.id,))
+            result = await row.fetchone()
+            if result is not None:
+                amount = result["money"]
+            else:
+                amount = 0
+            rand_ans = random.choice(["Heads", "Tails"])
+            if rand_ans == choice:
+                total = amount + bet
+            else:
+                total = max(amount - bet, 0)
+            await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, total))
+            await conn.commit()
+        if rand_ans == choice:
+            embed = discord.Embed(title=f"{rand_ans}! | You won!",
+                                description=f"You earned 🪙**{bet} catbucks.** Well done!",
+                                color=discord.Color.brand_green())
+            embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        else:
+            embed = discord.Embed(title=f"{rand_ans}... | You lost :(",
+                                description=f"You lost 🪙**{bet} catbucks.**",
+                                color=discord.Color.brand_red())
+            embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        await interaction.followup.send(embed=embed)
+
+    @coinflip.error
+    async def coinflip_error(self, interaction:discord.Interaction, error:app_commands.AppCommandError):
+        if isinstance(error, app_commands.CommandOnCooldown):
+            embed =discord.Embed(title="Cooldown!",
+                                 description=f"Try again <t:{int(time.time()) + int(error.retry_after)}:R>!",
+                                 color=discord.Color.red())
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        else:
+            print(error)
+
+    @app_commands.command(name="joke", description="Tell a joke hoping you earn money")
+    @app_commands.checks.cooldown(1, 300)
+    async def joke(self, interaction:discord.Interaction) -> None:
+        await interaction.response.defer(thinking=True)
+        async with self.bot.economy_pool.acquire() as conn:
+            row = await conn.execute('''SELECT money FROM economydb WHERE user_id = ?''',(interaction.user.id,))
+            result = await row.fetchone()
+            if result is not None:
+                amount = result["money"]
+            else:
+                amount = 0
+            rand_ans = random.choice(["Not Funny", "Funny"])
+            rand_amount = randint(50, 150)
+            if rand_ans == "Funny":
+                total = amount + rand_amount
+            else:
+                total = max(amount - rand_amount, 0)
+            await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
+                            ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, total))
+            await conn.commit()
+        if rand_ans == "Funny":
+            embed = discord.Embed(title=f"Your joke was hilarious LMAO!",
+                                description=f"You earned 🪙**{rand_amount} catbucks.** What a comedian!",
+                                color=discord.Color.brand_green())
+            embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        else:
+            embed = discord.Embed(title=f"Your joke was so bad...",
+                                description=f"You lost 🪙**{rand_amount} catbucks.**",
+                                color=discord.Color.brand_red())
+            embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        await interaction.followup.send(embed=embed)
+
+    @joke.error
+    async def joke_error(self, interaction:discord.Interaction, error:app_commands.AppCommandError):
         if isinstance(error, app_commands.CommandOnCooldown):
             embed =discord.Embed(title="Cooldown!",
                                  description=f"Try again <t:{int(time.time()) + int(error.retry_after)}:R>!",
@@ -392,17 +478,9 @@ class EconomyCog(commands.Cog):
         if earned >= 100 :
             final_response = "You caught the fish!"
             async with self.bot.economy_pool.acquire() as conn:
-                row = await conn.execute('''SELECT money FROM economydb WHERE user_id = ?''',(interaction.user.id,))
-                result = await row.fetchone()
-                if result is not None:
-                    amount = result["money"]
-                else:
-                    amount = 0
-                if amount != 0:
-                    total = amount + earned
-                    await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
-                                    ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, total))
-                    await conn.commit()
+                await conn.execute('''INSERT INTO economydb (user_id, money) VALUES (?, ?)
+                                ON CONFLICT(user_id) DO UPDATE SET money = excluded.money''', (interaction.user.id, earned))
+                await conn.commit()
         else:
             final_response = "The fish got away!"
         await interaction.followup.send(f"Ooh! You feel something on your rod", ephemeral=True)
@@ -413,6 +491,7 @@ class EconomyCog(commands.Cog):
                               description=f"```{final_response}```{f"\nYou caught **🪙{earned} catbucks!**" if earned > 100  else ""}",
                               color=discord.Color.brand_green() if earned > 100 else discord.Color.brand_red())
         embed.set_author(name=f"@{interaction.user}", icon_url=interaction.user.display_avatar.url)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
         await interaction.followup.send(embed=embed)
 
     @fish.error
