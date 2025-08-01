@@ -11,7 +11,7 @@ load_dotenv()
 import typing
 import asqlite
 import random
-TOKEN = os.getenv("TEST_TOKEN")
+TOKEN = os.getenv("TOKEN")
 
 cogs_list = ("logs", "events", "economy", "levels")
 
